@@ -101,8 +101,10 @@ class Board:
         # toggle flag
         if tile.flagged:
             self.draw_tile(x, y, self.textures.empty_tile)
+            tile.flagged = False
         else:
             self.draw_tile(x, y, self.textures.flagged)
+            tile.flagged = True
         
         
     
