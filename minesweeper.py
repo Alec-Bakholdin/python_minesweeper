@@ -1,16 +1,23 @@
 import random
+from time import sleep
 from board import Board
 
 # * * * * * * * * * * Properties of the board * * * * * * * * * *
 
 image_side_length = 25
-num_squares_x = 20
-num_squares_y = 20
+num_squares_x = 10
+num_squares_y = 10
 border = 15
-num_bombs = 40
+num_bombs = 10
 
 
 # Initialize the board
 board = Board(image_side_length, num_squares_x, num_squares_y, border, num_bombs)
 
-# board.right_click_table(2, 2)
+while not board.window_open:
+    sleep(0.01)
+
+board.right_click_table(2, 2)
+
+while board.window_open:
+    sleep(0.01)

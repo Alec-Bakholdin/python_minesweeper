@@ -6,6 +6,10 @@ class Tile:
     def __init__(self, is_bomb):
         self.is_bomb = is_bomb
 
+    def reset(self):
+        revealed = False
+        flagged = False
+
     #def post_init(self, x, y, tiles):
     def set_coords(self, x, y):
         self.x = x

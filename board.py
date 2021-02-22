@@ -3,13 +3,16 @@ from textures import Textures
 from tile import Tile
 import random
 import numpy
+import _thread
 
 class Board:
-    victory = False
-    defeat  = False
+    success = False
+    failure = False
+    window_open = False
 
     # constructor. Initializes empty board
-    def __init__(self, image_side_length, num_squares_x, num_squares_y, border_size, num_bombs, include_graphics=True):
+    def __init__(self, image_side_length, num_squares_x, num_squares_y, border_size, num_bombs, include_graphics=True, preset=None):
+        # set the intial variables
         self.image_side_length   = image_side_length
         self.num_squares_x       = num_squares_x
         self.num_squares_y       = num_squares_y
@@ -20,27 +23,47 @@ class Board:
         self.num_remaining_bombs = num_bombs
         self.remaining_tiles     = num_squares_x*num_squares_y
 
+        # create new board with random placement of bombs
+        if preset == None:
+            self.start_game()
+        # create new board with previous placement of bombs
+        else:
+            preset = [[tile.reset() for tile in row] for row in preset]
+            self.tiles = preset
+
+        if include_graphics:
+            _thread.start_new_thread(self.create_window)
+
+
+
+
+    # starts the logical part of minesweeper
+    def start_game(self):
         # initialize tiles
-        temp_tiles = [Tile(True) if i < num_bombs else Tile(False) for i in range(num_squares_x*num_squares_y)]
+        temp_tiles = [Tile(True) if i < self.num_total_bombs else Tile(False) for i in range(self.num_squares_x*self.num_squares_y)]
         numpy.random.shuffle(temp_tiles)
-        self.tiles = [temp_tiles[i*num_squares_x : i*num_squares_x + num_squares_y] for i in range(num_squares_y)]
+        self.tiles = [temp_tiles[i*self.num_squares_x : i*self.num_squares_x + self.num_squares_y] for i in range(self.num_squares_y)]
 
         # store metadata about the number of bombs and its neighbors as well
-        for i in range(num_squares_y):
-            for j in range(num_squares_x):
+        for i in range(self.num_squares_y):
+            for j in range(self.num_squares_x):
                 self.tiles[i][j].set_coords(i, j)
                 self.tiles[i][j].store_neighboring_tiles(self.tiles)
                 self.tiles[i][j].count_nearby_bombs()
 
-        # initialize root and canvas
+
+
+    # does graphics
+    def create_window(self):
+        # calculate dimensions
         self.width  = self.image_side_length  * self.num_squares_x
         self.height = self.image_side_length  * self.num_squares_y
 
+        # init root and canvas
         self.root = tkinter.Tk()
         self.root.resizable(False, False)
         self.canvas = tkinter.Canvas(width=self.width,height=self.height, bg='black')
 
-        self.textures = Textures(self.image_side_length)
 
         # bind all buttons
         self.canvas.bind("<Button-1>", self.left_click) # left click
@@ -49,30 +72,55 @@ class Board:
         self.canvas.bind("<Double-Button-1>", self.double_click) # double left click
 
 
+        # bind protocols
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
-        # set the board to be all empty images
-        # Also creates the data structure containing all the tiles
+
+        # initialize textures and sprites on board
+        self.textures = Textures(self.image_side_length)
         for i in range(self.num_squares_x):
             for j in range(self.num_squares_y):
-                is_bomb = self.tiles[i][j].is_bomb
 
                 # draw the tile with the appropriate image
-                image = self.textures.empty_tile # if not is_bomb else self.textures.bomb
+                image = self.textures.empty_tile # if not self.tiles[i][j].is_bomb else self.textures.bomb
                 self.draw_tile(i, j, image)
 
 
         # begin the game
         self.canvas.pack()
+        self.root.after(50, self.set_to_open)
         self.root.mainloop()
+
+
+    def on_close(self):
+        self.window_open = False
+        self.root.destroy()
+
+    def set_to_open(self):
+        self.window_open = True
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     # * * * * * * * * * * I/O functions * * * * * * * * * *
 
     def left_click_table(self, x, y):
-        self.left_click((x*self.image_side_length, y.image_side_length))
+        self.left_click(Pos(x*self.image_side_length, y*self.image_side_length))
 
     def right_click_table(self, x, y):
-        self.right_click((x*self.image_side_length, y.image_side_length))
+        self.right_click(Pos(x*self.image_side_length, y*self.image_side_length))
 
     def left_click(self, pos):
         (x,y) = self.get_tile_coords(pos)
@@ -85,10 +133,17 @@ class Board:
         if tile.neighboring_bombs == 0:
             self.explode_empty_squares(self.tiles[x][y])
         elif tile.is_bomb:
+            self.failure = True
             self.game_over()
         else:
-            self.draw_tile(x, y, self.textures.number_array[tile.neighboring_bombs])
+            if self.include_graphics:
+                self.draw_tile(x, y, self.textures.number_array[tile.neighboring_bombs])
             tile.revealed = True
+            self.remaining_tiles -= 1
+
+        if self.remaining_tiles == self.num_total_bombs:
+            self.success = True
+            self.victory()
 
     def right_click(self, pos):
         (x, y) = self.get_tile_coords(pos)
@@ -100,13 +155,15 @@ class Board:
 
         # toggle flag
         if tile.flagged:
-            self.draw_tile(x, y, self.textures.empty_tile)
+            if self.include_graphics:
+                self.draw_tile(x, y, self.textures.empty_tile)
             tile.flagged = False
         else:
-            self.draw_tile(x, y, self.textures.flagged)
+            if self.include_graphics:
+                self.draw_tile(x, y, self.textures.flagged)
             tile.flagged = True
         
-        
+    
     
     def middle_click(self, pos):
         print("Middle click")
@@ -122,7 +179,7 @@ class Board:
         for i in range(self.num_squares_y):
             for j in range(self.num_squares_x):
                 tile = self.tiles[i][j]
-                if tile.is_bomb:
+                if tile.is_bomb and self.include_graphics:
                     self.draw_tile(i, j, self.textures.bomb)
 
 
@@ -133,6 +190,38 @@ class Board:
         self.canvas.unbind("<Double-Button-1>")
 
         self.canvas.create_text(self.width/2,self.height/2,fill="red",font="Helvetica 20 bold", text="GAME OVER")
+
+    def victory(self):
+        print("Victory!")
+        # unbind everything so user can't do anything
+        self.canvas.unbind("<Button-1>")
+        self.canvas.unbind("<Button-2>") 
+        self.canvas.unbind("<Button-3>") 
+        self.canvas.unbind("<Double-Button-1>")
+
+        self.canvas.create_text(self.width/2,self.height/2,fill="green",font="Helvetica 20 bold", text="VICTORY")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     # * * * * * * * * * * Helper Functions * * * * * * * * * *
@@ -154,6 +243,7 @@ class Board:
 
     def explode_empty_squares(self, tile):
         self.draw_tile(tile.x, tile.y, self.textures.number_array[tile.neighboring_bombs])
+        self.remaining_tiles -= 1
         tile.revealed = True
 
         # base case
@@ -164,3 +254,9 @@ class Board:
         for neighbor in tile.neighbors:
             if neighbor.revealed == False:
                 self.explode_empty_squares(neighbor)
+
+
+class Pos:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
