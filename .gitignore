@@ -1,0 +1,4 @@
+# Compiled Sources
+/__pycache__/board.cpython-39.pyc
+/.vscode/*
+*.pyc
