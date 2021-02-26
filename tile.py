@@ -58,10 +58,10 @@ class Tile:
             neighbors.append(tiles[self.row+1][self.col+1])
 
         self.neighbors = neighbors
-        self.neighbors_revealed_or_flagged = 0
+        self.neighbors_flagged = 0
         self.num_neighbors = len(self.neighbors)
 
     # when this tile is revealed, decrement the neighbors' 
-    def announce_status_to_neighbors(self, revealed):
+    def announce_flag_to_neighbors(self, flagged):
         for neighbor in self.neighbors:
-            neighbor.neighbors_revealed_or_flagged += 1 if revealed else -1
+            neighbor.neighbors_flagged += (1 if flagged else -1)
