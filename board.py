@@ -1,14 +1,19 @@
 import tkinter
 from textures import Textures
 from tile import Tile
-import random
 import numpy
 import _thread
+from time import sleep
+
+true = True
+false = False
 
 class Board:
     success = False
     failure = False
     window_open = False
+    right_pressed = False
+    left_pressed = False
 
     # constructor. Initializes empty board
     def __init__(self, image_side_length, num_squares_x, num_squares_y, border_size, num_bombs, include_graphics=True, preset=None):
@@ -31,9 +36,11 @@ class Board:
             preset = [[tile.reset() for tile in row] for row in preset]
             self.tiles = preset
 
+        # create the window, if necessary
         if include_graphics:
             _thread.start_new_thread(self.create_window)
-
+            while not self.window_open:
+                sleep(0.01)
 
 
 
@@ -42,14 +49,14 @@ class Board:
         # initialize tiles
         temp_tiles = [Tile(True) if i < self.num_total_bombs else Tile(False) for i in range(self.num_squares_x*self.num_squares_y)]
         numpy.random.shuffle(temp_tiles)
-        self.tiles = [temp_tiles[i*self.num_squares_x : i*self.num_squares_x + self.num_squares_y] for i in range(self.num_squares_y)]
+        self.tiles = [temp_tiles[i*self.num_squares_x : (i + 1)*self.num_squares_x] for i in range(self.num_squares_y)]
 
         # store metadata about the number of bombs and its neighbors as well
-        for i in range(self.num_squares_y):
-            for j in range(self.num_squares_x):
-                self.tiles[i][j].set_coords(i, j)
-                self.tiles[i][j].store_neighboring_tiles(self.tiles)
-                self.tiles[i][j].count_nearby_bombs()
+        for row in range(self.num_squares_y):
+            for col in range(self.num_squares_x):
+                self.tiles[row][col].set_coords(row, col)
+                self.tiles[row][col].store_neighboring_tiles(self.tiles)
+                self.tiles[row][col].count_nearby_bombs()
 
 
 
@@ -67,9 +74,11 @@ class Board:
 
         # bind all buttons
         self.canvas.bind("<Button-1>", self.left_click) # left click
-        self.canvas.bind("<Button-2>", self.middle_click) # middle click
+        self.canvas.bind("<ButtonRelease-1>", self.release_left_click)
+        #self.canvas.bind("<Button-2>", self.middle_click) # middle click
         self.canvas.bind("<Button-3>", self.right_click) # right click
-        self.canvas.bind("<Double-Button-1>", self.double_click) # double left click
+        self.canvas.bind("<ButtonRelease-3>", self.release_right_click)
+        #self.canvas.bind("<Double-Button-1>", self.double_click) # double left click
 
 
         # bind protocols
@@ -78,12 +87,12 @@ class Board:
 
         # initialize textures and sprites on board
         self.textures = Textures(self.image_side_length)
-        for i in range(self.num_squares_x):
-            for j in range(self.num_squares_y):
+        for row in range(self.num_squares_y):
+            for col in range(self.num_squares_x):
 
                 # draw the tile with the appropriate image
-                image = self.textures.empty_tile # if not self.tiles[i][j].is_bomb else self.textures.bomb
-                self.draw_tile(i, j, image)
+                image = self.textures.empty_tile# if not self.tiles[row][col].is_bomb else self.textures.bomb
+                self.draw_tile(row, col, image)
 
 
         # begin the game
@@ -116,60 +125,85 @@ class Board:
 
     # * * * * * * * * * * I/O functions * * * * * * * * * *
 
-    def left_click_table(self, x, y):
-        self.left_click(Pos(x*self.image_side_length, y*self.image_side_length))
+    def left_click_table(self, row, col):
+        self.left_click(Pos(col*self.image_side_length, row*self.image_side_length))
 
-    def right_click_table(self, x, y):
-        self.right_click(Pos(x*self.image_side_length, y*self.image_side_length))
+    def right_click_table(self, row, col):
+        self.right_click(Pos(col*self.image_side_length, row*self.image_side_length))
 
     def left_click(self, pos):
-        (x,y) = self.get_tile_coords(pos)
-        tile = self.tiles[x][y]
+        self.left_pressed = True
+        (row, col) = self.get_tile_coords(pos)
+        tile = self.tiles[row][col]
         
-        
-        if tile.revealed or tile.flagged:
+        # on flagged, left click never does anything
+        if tile.flagged:
+            return
+
+        # flagged or revealed tiles are already actioned upon
+        # however, now we reveal all neighbors if left + right
+        if tile.revealed:
+            if self.right_pressed and tile.neighbors_revealed_or_flagged < tile.num_neighbors:
+                self.simultaneous_click(tile)
             return
         
+
+        # empty square does recursive thing
         if tile.neighboring_bombs == 0:
-            self.explode_empty_squares(self.tiles[x][y])
+            self.explode_empty_squares(tile)
+
+        # bomb is a game over
         elif tile.is_bomb:
             self.failure = True
             self.game_over()
+
+        # otherwise, reveal the tile as its number
         else:
             if self.include_graphics:
-                self.draw_tile(x, y, self.textures.number_array[tile.neighboring_bombs])
+                self.draw_tile(row, col, self.textures.number_array[tile.neighboring_bombs])
             tile.revealed = True
             self.remaining_tiles -= 1
 
+            # this tile has been revealed
+            tile.announce_status_to_neighbors(revealed=True)
+
+        # if we reveal all the non-bombs
         if self.remaining_tiles == self.num_total_bombs:
             self.success = True
             self.victory()
 
     def right_click(self, pos):
-        (x, y) = self.get_tile_coords(pos)
-        tile = self.tiles[x][y]
+        self.right_pressed = True
+        (row, col) = self.get_tile_coords(pos)
+        tile = self.tiles[row][col]
 
-        # Nothing happens if it's already revealed
+        # if revealed, only on left + right does something
         if tile.revealed:
+            if self.left_pressed and tile.neighbors_revealed_or_flagged < tile.num_neighbors:
+                self.simultaneous_click(tile)
             return
 
         # toggle flag
         if tile.flagged:
             if self.include_graphics:
-                self.draw_tile(x, y, self.textures.empty_tile)
+                self.draw_tile(row, col, self.textures.empty_tile)
+            tile.announce_status_to_neighbors(revealed=False)
             tile.flagged = False
         else:
             if self.include_graphics:
-                self.draw_tile(x, y, self.textures.flagged)
+                self.draw_tile(row, col, self.textures.flagged)
+            tile.announce_status_to_neighbors(revealed=True)
             tile.flagged = True
-        
-    
-    
-    def middle_click(self, pos):
-        print("Middle click")
-    
-    def double_click(self, pos):
-        print("Double click")
+
+    def release_left_click(self, pos):
+        self.left_pressed = False
+
+    def release_right_click(self, pos):
+        self.right_pressed = False
+
+    # detect left and right click
+    def simultaneous_click(self, tile):
+        print("simul click")
 
 
     def game_over(self):
@@ -229,22 +263,25 @@ class Board:
     # Creates the given image on the canvas at the given coords
     # Those coords are referencing the actual tiles, instead of
     # pixels
-    def draw_tile(self, x, y, image):
-        x = self.border_size + x*self.image_side_length
-        y = self.border_size + y*self.image_side_length
+    def draw_tile(self, row, col, image):
+        y = self.border_size + row*self.image_side_length
+        x = self.border_size + col*self.image_side_length
         self.canvas.create_image(x, y, image=image)
 
-    # Gets the x, y coordinates in terms of the game tiles
+    # Gets the row, col coordinates in terms of the game tiles
     # instead of the pixels
     def get_tile_coords(self, pos):
-        x = int(pos.x/self.image_side_length)
-        y = int(pos.y/self.image_side_length)
-        return (x, y)
+        row = int(pos.y/self.image_side_length)
+        col = int(pos.x/self.image_side_length)
+        return (row, col)
 
-    def explode_empty_squares(self, tile):
-        self.draw_tile(tile.x, tile.y, self.textures.number_array[tile.neighboring_bombs])
+    def explode_empty_squares(self, tile : Tile):
+        self.draw_tile(tile.row, tile.col, self.textures.number_array[tile.neighboring_bombs])
         self.remaining_tiles -= 1
+
         tile.revealed = True
+        tile.announce_status_to_neighbors(revealed=True)
+
 
         # base case
         if tile.neighboring_bombs != 0:

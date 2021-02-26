@@ -11,9 +11,9 @@ class Tile:
         flagged = False
 
     #def post_init(self, x, y, tiles):
-    def set_coords(self, x, y):
-        self.x = x
-        self.y = y
+    def set_coords(self, row, col):
+        self.row = row
+        self.col = col
 
     # Gets the number of bombs that are neighboring
     # the tile the pos field is inside (the pos field
@@ -40,23 +40,28 @@ class Tile:
         num_squares_y = len(tiles)
         neighbors = []
 
-        if self.x > 0 and self.y > 0:
-            neighbors.append(tiles[self.x-1][self.y-1])
-        if self.x > 0:
-            neighbors.append(tiles[self.x-1][self.y])
-        if self.x > 0 and self.y < num_squares_y - 1:
-            neighbors.append(tiles[self.x-1][self.y+1])
-        if self.y > 0:
-            neighbors.append(tiles[self.x][self.y-1])
-        if self.y < num_squares_y - 1:
-            neighbors.append(tiles[self.x][self.y+1])
-        if self.x < num_squares_x - 1 and self.y > 0:
-            neighbors.append(tiles[self.x+1][self.y-1])
-        if self.x < num_squares_x - 1:
-            neighbors.append(tiles[self.x+1][self.y])
-        if self.x < num_squares_x - 1 and self.y < num_squares_y - 1:
-            neighbors.append(tiles[self.x+1][self.y+1])
+        if self.col > 0 and self.row > 0:
+            neighbors.append(tiles[self.row-1][self.col-1])
+        if self.col > 0:
+            neighbors.append(tiles[self.row][self.col-1])
+        if self.col > 0 and self.row < num_squares_y - 1:
+            neighbors.append(tiles[self.row+1][self.col-1])
+        if self.row > 0:
+            neighbors.append(tiles[self.row-1][self.col])
+        if self.row < num_squares_y - 1:
+            neighbors.append(tiles[self.row+1][self.col])
+        if self.col < num_squares_x - 1 and self.row > 0:
+            neighbors.append(tiles[self.row-1][self.col+1])
+        if self.col < num_squares_x - 1:
+            neighbors.append(tiles[self.row][self.col+1])
+        if self.col < num_squares_x - 1 and self.row < num_squares_y - 1:
+            neighbors.append(tiles[self.row+1][self.col+1])
 
         self.neighbors = neighbors
+        self.neighbors_revealed_or_flagged = 0
+        self.num_neighbors = len(self.neighbors)
 
-    
+    # when this tile is revealed, decrement the neighbors' 
+    def announce_status_to_neighbors(self, revealed):
+        for neighbor in self.neighbors:
+            neighbor.neighbors_revealed_or_flagged += 1 if revealed else -1
